@@ -1,0 +1,20 @@
+# 注入/回滚时生成的备份
+*.bak
+*.orig
+*.rej
+
+# 注入器缓存
+__pycache__/
+*.pyc
+*.pyo
+
+# 构建产物（不应提交）
+node_modules/
+dist/
+piik-server.new
+
+# 编辑器/系统
+.DS_Store
+.idea/
+.vscode/
+*.swp

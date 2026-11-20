@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Signing in · NTK</title>
+  <style>
+    :root { color-scheme: light dark; }
+    html,body{margin:0;height:100%;font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans SC",sans-serif}
+    body{display:flex;align-items:center;justify-content:center;background:#0b0f0d;color:#d7e8dc}
+    .box{text-align:center;max-width:420px;padding:32px}
+    .brand{font-size:22px;font-weight:700;letter-spacing:.5px;color:#5ef2a0}
+    .msg{margin-top:14px;font-size:14px;opacity:.8;line-height:1.6}
+    .err{color:#ff8a8a}
+    a{color:#5ef2a0}
+  </style>
+</head>
+<body>
+  <div class="box">
+    <div class="brand">natsuko / account</div>
+    <div class="msg" id="m">Signing you in… / 正在登录…</div>
+  </div>
+  <script type="module">
+    const m = document.getElementById('m');
+    // account.ts is bundled separately; callback logic is inlined here so this
+    // static page needs no app bootstrap. It mirrors lib/account.ts.
+    const ORIGIN = 'https://account.natsuko.online';
+    const TOKEN_URL = ORIGIN + '/oauth/token';
+    const USERINFO_URL = ORIGIN + '/oauth/userinfo';
+    const CLIENT_ID = '__NATSUKO_CLIENT_ID__';
+    const REDIRECT_URI = '__NATSUKO_REDIRECT_URI__';
+    const ACCOUNT_KEY = 'piik:natsuko-account:v1';
+    const DISPLAY_NAME_KEY = 'piik:display-name:v1';
+
+    function fail(text) { m.className = 'msg err'; m.innerHTML = text + ' <a href="/">Back to Piik →</a>'; }
+    function clampName(name){const p=Array.from(name);return p.length<=24?name:p.slice(0,24).join('');}
+
+    (async () => {
+      try {
+        const q = new URLSearchParams(location.search);
+        const code = q.get('code');
+        const error = q.get('error');
+        if (error) { fail('Sign-in was cancelled or failed: ' + error); return; }
+        if (!code) { fail('Invalid sign-in response.'); return; }
+        const state = q.get('state');
+        const expected = sessionStorage.getItem('piik:oauth:state');
+        const verifier = sessionStorage.getItem('piik:oauth:verifier');
+        if (!state || state !== expected || !verifier) { fail('Security check failed (state mismatch).'); return; }
+
+        const tr = await fetch(TOKEN_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            grant_type: 'authorization_code', client_id: CLIENT_ID, code,
+            redirect_uri: REDIRECT_URI, code_verifier: verifier,
+          }).toString(),
+        });
+        if (!tr.ok) { fail('Token exchange failed (' + tr.status + ').'); return; }
+        const tokens = await tr.json();
+
+        const ir = await fetch(USERINFO_URL, {
+          headers: { Authorization: 'Bearer ' + tokens.access_token },
+        });
+        if (!ir.ok) { fail('Could not load profile (' + ir.status + ').'); return; }
+        const info = await ir.json();
+        const name = info.name || info.preferred_username || (info.email ? info.email.split('@')[0] : 'NTK');
+        const DEFAULT_AVATAR = ORIGIN + '/assets/default-avatar.svg';
+        const account = { ...info, name, picture: info.picture || DEFAULT_AVATAR };
+        localStorage.setItem(ACCOUNT_KEY, JSON.stringify(account));
+        try { localStorage.setItem(DISPLAY_NAME_KEY, clampName(name).trim()); } catch (_) {}
+
+        sessionStorage.removeItem('piik:oauth:verifier');
+        sessionStorage.removeItem('piik:oauth:state');
+        sessionStorage.removeItem('piik:oauth:nonce');
+        m.textContent = 'Signed in as ' + name + '. Redirecting…';
+        location.replace('/');
+      } catch (e) {
+        fail('Unexpected error: ' + (e && e.message ? e.message : String(e)));
+      }
+    })();
+  </script>
+</body>
+</html>
