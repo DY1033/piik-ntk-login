@@ -12,6 +12,8 @@ ORIGIN="https://account.natsuko.online"
 REQUIRE_LOGIN="false"
 LOCK_NAME="true"
 BUILD=1
+DRY_RUN=0
+BACKUP_BINARY=1
 
 usage() {
   cat <<'EOF'
@@ -27,6 +29,9 @@ usage() {
   --lock-name            登录后昵称锁定为账号昵称（默认开启）
   --no-lock-name         允许用户自行修改房间昵称
   --no-build             只注入代码，不执行 npm run build
+  --dry-run              试运行：只检查注入锚点并打印将要做的改动，不写任何文件、不构建
+  --backup-binary        Go 编译成功后自动备份现有二进制为 piik-server.bak-<时间戳>（默认开启）
+  --no-backup-binary     关闭自动备份二进制
   -h, --help             显示帮助
 EOF
 }
@@ -41,6 +46,9 @@ while [[ $# -gt 0 ]]; do
     --no-lock-name)  LOCK_NAME="false"; shift;;
     --lock-name)     LOCK_NAME="true"; shift;;
     --no-build)    BUILD=0; shift;;
+    --dry-run)     DRY_RUN=1; BUILD=0; shift;;
+    --backup-binary)  BACKUP_BINARY=1; shift;;
+    --no-backup-binary) BACKUP_BINARY=0; shift;;
     -h|--help)     usage; exit 0;;
     *) echo "未知参数: $1" >&2; usage; exit 1;;
   esac
@@ -64,7 +72,24 @@ echo "    回调地址 : $REDIRECT_URI"
 echo "    账号中心 : $ORIGIN"
 echo "    登录守卫 : $REQUIRE_LOGIN  (true=点功能才提示登录；false=纯可选登录)"
 echo "    锁定昵称 : $LOCK_NAME"
+[[ "$DRY_RUN" -eq 1 ]] && echo "    试运行   : 是（--dry-run，不修改任何文件）"
+[[ "$BUILD" -eq 1 ]] && echo "    二进制备份: $([[ $BACKUP_BINARY -eq 1 ]] && echo 开启 || echo 关闭)"
 echo
+
+if [[ "$DRY_RUN" -eq 1 ]]; then
+  python3 "$HERE/inject.py" \
+    --root "$ROOT" \
+    --client-id "$CLIENT_ID" \
+    --redirect-uri "$REDIRECT_URI" \
+    --origin "$ORIGIN" \
+    --require-login "$REQUIRE_LOGIN" \
+    --lock-name "$LOCK_NAME" \
+    --template-dir "$HERE/template" \
+    --dry-run
+  echo
+  echo "==> 试运行结束，未修改任何文件。确认无误后去掉 --dry-run 正式安装。"
+  exit 0
+fi
 
 python3 "$HERE/inject.py" \
   --root "$ROOT" \
@@ -90,6 +115,11 @@ if [[ "$BUILD" -eq 1 ]]; then
         echo "==> 检测到 Go 项目，正在重新编译二进制（$PKG）…"
         if CGO_ENABLED=0 GOTOOLCHAIN=auto go build -trimpath -o piik-server.new "$PKG"; then
           echo "    已生成 ./piik-server.new"
+          if [[ "$BACKUP_BINARY" -eq 1 && -f "$ROOT/piik-server" ]]; then
+            BSTAMP="$(date +%Y%m%d-%H%M%S)"
+            cp -a "$ROOT/piik-server" "$ROOT/piik-server.bak-$BSTAMP"
+            echo "    已自动备份原二进制为 ./piik-server.bak-$BSTAMP（回滚直接换回文件名即可）"
+          fi
           echo "    生效步骤：停止服务 → 用 piik-server.new 替换正在运行的二进制 → 启动服务"
         else
           echo "    ! Go 编译失败。前端产物已更新到 internal/server/webassets/dist/，请手动编译。"

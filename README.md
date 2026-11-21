@@ -70,6 +70,14 @@ bash /path/to/piik-ntk-login/install.sh \
 bash install.sh --client-id nk_xxx --redirect-uri https://你的域名/auth/callback.html --no-build
 ```
 
+先试运行看看会改哪些文件（不写任何文件、不构建，适合第一次在陌生 Piik 版本上评估）：
+
+```bash
+bash install.sh --client-id nk_xxx --redirect-uri https://你的域名/auth/callback.html --dry-run
+```
+
+> **二进制自动备份**：检测到 Go 项目并编译成功后，脚本会自动把现有的 `piik-server` 备份为 `piik-server.bak-<时间戳>`，替换失败时直接把备份文件改回原名即可回滚。不想要这个行为可加 `--no-backup-binary`。
+
 ---
 
 ## 第三步：替换二进制并重启
@@ -135,7 +143,7 @@ CGO_ENABLED=0 go build -trimpath -o piik-server.new ./cmd/piik-server
 Piik 在页面加载、切回标签页时以及每 30 秒会探测一次账号中心会话。账号中心通过 `nk_seen` 标记区分「从未登录」与「已登出」：已登出会返回明确状态让 Piik 自动清除本地态；若你是跨站部署且浏览器禁用了第三方 Cookie，探测可能拿不到标记，此时手动点「退出」即可。
 
 **Q：想让访客点功能时才提示登录 / 允许用户自己改名？**
-安装时加 `--require-login` 开启登录守卫（访客正常浏览，点功能才在右上角提示登录，点提示才跳转）；加 `--no-lock-name` 允许登录后自行改名。两者默认分别是「纯可选登录」「锁定昵称为账号昵称」。已安装的站点重新跑一次 `install.sh` 带新参数即可切换。
+安装时加 `--require-login` 开启登录守卫（访客正常浏览，点功能才在右上角提示登录，点提示才跳转）；加 `--no-lock-name` 允许登录后自行改名。两者默认分别是「纯可选登录」「锁定昵称为账号昵称」。已安装的站点重新跑一次 `install.sh` 带新参数即可切换。`--dry-run` 可以在不落盘的前提下预演整个注入过程。
 
 ---
 

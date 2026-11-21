@@ -138,7 +138,21 @@ def read(path):
         return f.read()
 
 
+DRY_RUN = False
+
+
 def write(path, text):
+    """写入文件；--dry-run 模式下只打印将要发生的变化，不动磁盘。"""
+    if DRY_RUN:
+        try:
+            old = read(path)
+            changed = old != text
+        except Exception:
+            changed = True
+        print("      [dry-run] %s%s" % (path,
+              "（内容将更新，%d 字节）" % len(text.encode("utf-8")) if changed
+              else "（内容无变化，跳过）"))
+        return
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         f.write(text)
@@ -164,7 +178,12 @@ def main():
                     help="登录后是否把房间昵称锁定为账号昵称（默认 true）")
     ap.add_argument("--template-dir", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "template"),
                     help="加装包模板目录")
+    ap.add_argument("--dry-run", action="store_true", dest="dry_run",
+                    help="试运行：只检查锚点并打印将要做的事，不修改任何文件")
     args = ap.parse_args()
+
+    global DRY_RUN
+    DRY_RUN = bool(args.dry_run)
 
     root = os.path.abspath(args.root)
     tpl = os.path.abspath(args.template_dir)
@@ -182,14 +201,17 @@ def main():
 
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     backup_dir = os.path.join(root, ".natsuko-backup", stamp)
-    os.makedirs(backup_dir, exist_ok=True)
-    print("[1/6] 备份原文件到 " + backup_dir)
-    for rel in BACKUP_FILES:
-        src = os.path.join(root, rel)
-        if os.path.isfile(src):
-            dst = os.path.join(backup_dir, rel)
-            os.makedirs(os.path.dirname(dst), exist_ok=True)
-            shutil.copy2(src, dst)
+    if DRY_RUN:
+        print("[dry-run] 试运行模式：不会修改任何文件，也不创建备份目录。")
+    else:
+        os.makedirs(backup_dir, exist_ok=True)
+        print("[1/6] 备份原文件到 " + backup_dir)
+        for rel in BACKUP_FILES:
+            src = os.path.join(root, rel)
+            if os.path.isfile(src):
+                dst = os.path.join(backup_dir, rel)
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                shutil.copy2(src, dst)
 
     try:
         print("[2/6] 写入 account.ts 与回调页")
@@ -281,9 +303,14 @@ def main():
                 css = css.rstrip() + "\n\n" + add_css.strip()
             write(cp, css)
 
-        print("\n[DONE] 注入完成。client_id=%s redirect_uri=%s" % (client_id, redirect_uri))
-        print("      下一步：npm run build，然后重启 Piik 服务。")
-        print("      如需回滚：cp -a %s/. .  （从备份目录还原）" % backup_dir)
+        print("\n[DONE] 注入完成。client_id=%s redirect_uri=%s" % (client_id, redirect_uri)
+              if not DRY_RUN else
+              "\n[DONE] 试运行结束：以上为将要修改的文件，未做任何改动。client_id=%s redirect_uri=%s" % (client_id, redirect_uri))
+        if DRY_RUN:
+            print("      去掉 --dry-run 重新执行即可正式注入。")
+        else:
+            print("      下一步：npm run build，然后重启 Piik 服务。")
+            print("      如需回滚：cp -a %s/. .  （从备份目录还原）" % backup_dir)
     except SystemExit:
         # 出错时还原已备份文件
         print("[ROLLBACK] 还原原文件…", file=sys.stderr)
